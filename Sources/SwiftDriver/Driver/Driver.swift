@@ -456,7 +456,6 @@ public struct Driver {
     interModuleDependencyOracle: InterModuleDependencyOracle? = nil
   ) throws {
     self.env = env
-    self.fileSystem = fileSystem
     self.integratedDriver = integratedDriver
 
     self.diagnosticEngine = diagnosticsEngine
@@ -487,7 +486,13 @@ public struct Driver {
     self.optionTable = OptionTable()
     self.parsedOptions = try optionTable.parse(Array(args), for: self.driverKind)
     self.showJobLifecycle = parsedOptions.contains(.driverShowJobLifecycle)
-
+    let vfsFiles = parsedOptions.arguments(for: [.vfsoverlay, .vfsoverlayEQ])
+    var vfss: [FileSystem] = [fileSystem]
+    for vfsFile in vfsFiles {
+      let redirectingFileSystem = try RedirectingFileSystem(yamlFilePath: try VirtualPath(path: vfsFile.argument.asSingle), fs: fileSystem)
+      vfss.append(redirectingFileSystem)
+    }
+    self.fileSystem = OverlayFileSystem(fsList: vfss)
     // Determine the compilation mode.
     self.compilerMode = try Self.computeCompilerMode(&parsedOptions, driverKind: driverKind, diagnosticsEngine: diagnosticEngine)
 
