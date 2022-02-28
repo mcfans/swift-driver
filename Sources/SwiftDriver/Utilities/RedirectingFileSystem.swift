@@ -1,14 +1,8 @@
 import TSCBasic
 @_implementationOnly import Yams
 
-class RedirectingFileSystem: FileSystem {
-  func chmod(_ mode: FileMode, path: AbsolutePath, options: Set<FileMode.Option>) throws {
-    throw TSCBasic.FileSystemError.init(.unsupported, path)
-  }
-
-  func removeFileTree(_ path: AbsolutePath) throws {
-    throw TSCBasic.FileSystemError.init(.unsupported, path)
-  }
+@_spi(Testing)
+public class RedirectingFileSystem: FileSystem {
 
   private let overlay: RedirectingFileSystemOverlay
   private let fs: FileSystem
@@ -22,11 +16,20 @@ class RedirectingFileSystem: FileSystem {
     self.overlay.useExternalNames ?? true
   }
 
-  init(yamlFilePath: VirtualPath, fs: FileSystem = localFileSystem) throws {
+  @_spi(Testing)
+  public init(yamlFilePath: VirtualPath, fs: FileSystem = localFileSystem) throws {
     let yamlContent = try fs.readFileContents(yamlFilePath)
     let decoder = YAMLDecoder()
     self.fs = fs
-    self.externalContentsPrefixDir = fs.currentWorkingDirectory
+    let prefixDir: AbsolutePath?
+    if case let .absolute(path) = yamlFilePath {
+      prefixDir = path
+    } else if let workingDir = fs.currentWorkingDirectory {
+      prefixDir = yamlFilePath.parentDirectory.resolvedRelativePath(base: workingDir).absolutePath
+    } else {
+      prefixDir = nil
+    }
+    self.externalContentsPrefixDir = prefixDir
     self.overlay = try yamlContent.withData { data in
       try decoder.decode(RedirectingFileSystemOverlay.self, from: data)
     }
@@ -36,7 +39,7 @@ class RedirectingFileSystem: FileSystem {
     for content in overlay.roots {
       // FIXME: Roots might be relative.
       let rootPath = AbsolutePath(content.name)
-      if let entry = content.lookup(path: rootPath, in: AbsolutePath.root) {
+      if let entry = content.lookup(path: path, in: rootPath) {
         return entry
       }
     }
@@ -67,99 +70,111 @@ class RedirectingFileSystem: FileSystem {
     }
   }
 
-  func createDirectory(_ path: AbsolutePath, recursive: Bool) throws {
+  public func createDirectory(_ path: AbsolutePath, recursive: Bool) throws {
 
   }
 
-  func exists(_ path: AbsolutePath, followSymlink: Bool) -> Bool {
+  public func exists(_ path: AbsolutePath, followSymlink: Bool) -> Bool {
     if let entry = lookup(at: path), let path = getRealPath(for: entry) {
       return fs.exists(path, followSymlink: followSymlink)
     }
     return false
   }
 
-  func isDirectory(_ path: AbsolutePath) -> Bool {
+  public func isDirectory(_ path: AbsolutePath) -> Bool {
     if let entry = lookup(at: path) {
       return entry.type == .directory
     }
     return false
   }
 
-  func isFile(_ path: AbsolutePath) -> Bool {
+  public func isFile(_ path: AbsolutePath) -> Bool {
     if let entry = lookup(at: path) {
       return entry.type == .file
     }
     return false
   }
 
-  func isExecutableFile(_ path: AbsolutePath) -> Bool {
+  public func isExecutableFile(_ path: AbsolutePath) -> Bool {
     if let entry = lookup(at: path), let realPath = getRealPath(for: entry) {
       return fs.isExecutableFile(realPath)
     }
     return false
   }
 
-  func isSymlink(_ path: AbsolutePath) -> Bool {
+  public func isSymlink(_ path: AbsolutePath) -> Bool {
     if let entry = lookup(at: path), let realPath = getRealPath(for: entry) {
       return fs.isSymlink(realPath)
     }
     return false
   }
 
-  func getDirectoryContents(_ path: AbsolutePath) throws -> [String] {
+  public func getDirectoryContents(_ path: AbsolutePath) throws -> [String] {
     if let entry = lookup(at: path), let realPath = getRealPath(for: entry) {
       return try fs.getDirectoryContents(realPath)
     }
     return []
   }
 
-  func readFileContents(_ path: AbsolutePath) throws -> ByteString {
+  public func readFileContents(_ path: AbsolutePath) throws -> ByteString {
     if let entry = lookup(at: path), let realPath = getRealPath(for: entry) {
       return try fs.readFileContents(realPath)
     }
     throw TSCBasic.FileSystemError.init(.noEntry, path)
   }
 
-  var currentWorkingDirectory: AbsolutePath?
+  public var currentWorkingDirectory: AbsolutePath?
 
-  func changeCurrentWorkingDirectory(to path: AbsolutePath) throws {
+  public func changeCurrentWorkingDirectory(to path: AbsolutePath) throws {
   }
 
-  var homeDirectory: AbsolutePath {
+  public var homeDirectory: AbsolutePath {
     .root
   }
 
-  var cachesDirectory: AbsolutePath?
+  public var cachesDirectory: AbsolutePath?
 
-  func createSymbolicLink(_ path: AbsolutePath, pointingAt destination: AbsolutePath, relative: Bool) throws {
-
-  }
-
-  func copy(from sourcePath: AbsolutePath, to destinationPath: AbsolutePath) throws {
+  public func createSymbolicLink(_ path: AbsolutePath, pointingAt destination: AbsolutePath, relative: Bool) throws {
 
   }
 
-  func move(from sourcePath: AbsolutePath, to destinationPath: AbsolutePath) throws {
+  public func copy(from sourcePath: AbsolutePath, to destinationPath: AbsolutePath) throws {
 
   }
 
-  func writeFileContents(_ path: AbsolutePath, bytes: ByteString) throws {
+  public func move(from sourcePath: AbsolutePath, to destinationPath: AbsolutePath) throws {
+
+  }
+
+  public func writeFileContents(_ path: AbsolutePath, bytes: ByteString) throws {
     throw TSCBasic.FileSystemError.init(.unsupported, path)
   }
 
+  public func chmod(_ mode: FileMode, path: AbsolutePath, options: Set<FileMode.Option>) throws {
+    throw TSCBasic.FileSystemError.init(.unsupported, path)
+  }
+
+  public func removeFileTree(_ path: AbsolutePath) throws {
+    throw TSCBasic.FileSystemError.init(.unsupported, path)
+  }
 }
 
-class OverlayFileSystem: FileSystem {
-  func chmod(_ mode: FileMode, path: AbsolutePath, options: Set<FileMode.Option>) throws {
+@_spi(Testing)
+public class OverlayFileSystem: FileSystem {
+  public func chmod(_ mode: FileMode, path: AbsolutePath, options: Set<FileMode.Option>) throws {
     try localFileSystem.chmod(mode, path: path, options: options)
   }
 
-  func removeFileTree(_ path: AbsolutePath) throws {
+  public func removeFileTree(_ path: AbsolutePath) throws {
     try localFileSystem.removeFileTree(path)
   }
 
-  func writeFileContents(_ path: AbsolutePath, bytes: ByteString) throws {
+  public func writeFileContents(_ path: AbsolutePath, bytes: ByteString) throws {
     try localFileSystem.writeFileContents(path, bytes: bytes)
+  }
+
+  public func writeFileContents(_ path: AbsolutePath, bytes: ByteString, atomically: Bool) throws {
+    try localFileSystem.writeFileContents(path, bytes: bytes, atomically: atomically)
   }
 
   func fsContains(path: AbsolutePath) -> FileSystem? {
@@ -171,18 +186,18 @@ class OverlayFileSystem: FileSystem {
     return nil
   }
 
-  func readFileContents(_ path: AbsolutePath) throws -> ByteString {
+  public func readFileContents(_ path: AbsolutePath) throws -> ByteString {
     if let fs = fsContains(path: path) {
       return try fs.readFileContents(path)
     }
     throw TSCBasic.FileSystemError.init(.noEntry, path)
   }
 
-  func createDirectory(_ path: AbsolutePath, recursive: Bool) throws {
+  public func createDirectory(_ path: AbsolutePath, recursive: Bool) throws {
     try localFileSystem.createDirectory(path, recursive: recursive)
   }
 
-  func exists(_ path: AbsolutePath, followSymlink: Bool) -> Bool {
+  public func exists(_ path: AbsolutePath, followSymlink: Bool) -> Bool {
     for fs in fsList.reversed() {
       if fs.exists(path, followSymlink: followSymlink) {
         return true
@@ -195,7 +210,7 @@ class OverlayFileSystem: FileSystem {
     fsList.first!
   }
 
-  func isDirectory(_ path: AbsolutePath) -> Bool {
+  public func isDirectory(_ path: AbsolutePath) -> Bool {
     for fs in fsList.reversed() {
       if fs.exists(path, followSymlink: true) {
         return fs.isDirectory(path)
@@ -204,7 +219,7 @@ class OverlayFileSystem: FileSystem {
     return false
   }
 
-  func isFile(_ path: AbsolutePath) -> Bool {
+  public func isFile(_ path: AbsolutePath) -> Bool {
     for fs in fsList.reversed() {
       if fs.exists(path, followSymlink: true) {
         return fs.isFile(path)
@@ -213,7 +228,7 @@ class OverlayFileSystem: FileSystem {
     return false
   }
 
-  func isExecutableFile(_ path: AbsolutePath) -> Bool {
+  public func isExecutableFile(_ path: AbsolutePath) -> Bool {
     for fs in fsList.reversed() {
       if fs.exists(path, followSymlink: true) {
         return fs.isExecutableFile(path)
@@ -222,7 +237,7 @@ class OverlayFileSystem: FileSystem {
     return false
   }
 
-  func isSymlink(_ path: AbsolutePath) -> Bool {
+  public func isSymlink(_ path: AbsolutePath) -> Bool {
     for fs in fsList.reversed() {
       if fs.exists(path, followSymlink: true) {
         return fs.isSymlink(path)
@@ -231,7 +246,7 @@ class OverlayFileSystem: FileSystem {
     return false
   }
 
-  func getDirectoryContents(_ path: AbsolutePath) throws -> [String] {
+  public func getDirectoryContents(_ path: AbsolutePath) throws -> [String] {
     for fs in fsList.reversed() {
       if fs.exists(path, followSymlink: true) {
         return try fs.getDirectoryContents(path)
@@ -240,37 +255,38 @@ class OverlayFileSystem: FileSystem {
     throw TSCBasic.FileSystemError.init(.noEntry, path)
   }
 
-  var currentWorkingDirectory: AbsolutePath? {
+  public var currentWorkingDirectory: AbsolutePath? {
     fsList.first?.currentWorkingDirectory
   }
 
-  func changeCurrentWorkingDirectory(to path: AbsolutePath) throws {
+  public func changeCurrentWorkingDirectory(to path: AbsolutePath) throws {
     try fsList.first?.changeCurrentWorkingDirectory(to: path)
   }
 
-  var homeDirectory: AbsolutePath {
+  public var homeDirectory: AbsolutePath {
     fsList.first!.homeDirectory
   }
 
-  var cachesDirectory: AbsolutePath? {
+  public var cachesDirectory: AbsolutePath? {
     fsList.first!.cachesDirectory
   }
 
-  func createSymbolicLink(_ path: AbsolutePath, pointingAt destination: AbsolutePath, relative: Bool) throws {
+  public func createSymbolicLink(_ path: AbsolutePath, pointingAt destination: AbsolutePath, relative: Bool) throws {
     try fsList.first!.createSymbolicLink(path, pointingAt: destination, relative: relative)
   }
 
-  func copy(from sourcePath: AbsolutePath, to destinationPath: AbsolutePath) throws {
+  public func copy(from sourcePath: AbsolutePath, to destinationPath: AbsolutePath) throws {
     try fsList.first!.copy(from: sourcePath, to: destinationPath)
   }
 
-  func move(from sourcePath: AbsolutePath, to destinationPath: AbsolutePath) throws {
+  public func move(from sourcePath: AbsolutePath, to destinationPath: AbsolutePath) throws {
     try fsList.first!.move(from: sourcePath, to: destinationPath)
   }
 
   var fsList: [FileSystem] = []
 
-  init(fsList: [FileSystem]) {
+  @_spi(Testing)
+  public init(fsList: [FileSystem]) {
     self.fsList = fsList
   }
 
@@ -347,7 +363,12 @@ private struct RedirectingFileSystemEntry: Codable {
   }
 
   func lookup(path: AbsolutePath, in directory: AbsolutePath) -> RedirectingFileSystemEntry? {
-    let currentFilePath = directory.appending(component: name)
+    let currentFilePath: AbsolutePath
+    if let virtualPath = try? VirtualPath(path: name), case let .absolute(path) = virtualPath {
+      currentFilePath = path
+    } else {
+      currentFilePath = directory.appending(component: name)
+    }
     if currentFilePath == path {
       return self
     }
@@ -358,7 +379,7 @@ private struct RedirectingFileSystemEntry: Codable {
         // This should not happen, we validated yaml file before
         return nil
       }
-      if currentFilePath.isAncestor(of: path) {
+      if currentFilePath.isAncestorOfOrEqual(to: path) {
         for content in contents {
           if let entry = content.lookup(path: path, in: currentFilePath) {
             return entry

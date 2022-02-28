@@ -5560,20 +5560,24 @@ final class SwiftDriverTests: XCTestCase {
 
   func testVFSOverlay() throws {
     do {
-      var driver = try Driver(args: ["swiftc", "-c", "-vfsoverlay", "overlay.yaml", "foo.swift"])
+      let overlayFilePath = Fixture.fixturePath(at: RelativePath("VFSOverlay"), for: "minimalValidOverlay.yaml")!
+      var driver = try Driver(args: ["swiftc", "-c", "-vfsoverlay", overlayFilePath.pathString, "foo.swift"])
       let plannedJobs = try driver.planBuild().removingAutolinkExtractJobs()
       XCTAssertEqual(plannedJobs.count, 1)
       XCTAssertEqual(plannedJobs[0].kind, .compile)
-      XCTAssert(plannedJobs[0].commandLine.contains(subsequence: [.flag("-vfsoverlay"), .path(.relative(RelativePath("overlay.yaml")))]))
+      XCTAssert(plannedJobs[0].commandLine.contains(subsequence: [.flag("-vfsoverlay"), .path(.absolute(overlayFilePath))]))
     }
 
     // Verify that the overlays are passed to the frontend in the same order.
     do {
-      var driver = try Driver(args: ["swiftc", "-c", "-vfsoverlay", "overlay1.yaml", "-vfsoverlay", "overlay2.yaml", "-vfsoverlay", "overlay3.yaml", "foo.swift"])
+      let overlayFile1Path = Fixture.fixturePath(at: RelativePath("VFSOverlay"), for: "minimalValidOverlay.yaml")!
+      let overlayFile2Path = Fixture.fixturePath(at: RelativePath("VFSOverlay"), for: "minimalValidOverlay2.yaml")!
+      let overlayFile3Path = Fixture.fixturePath(at: RelativePath("VFSOverlay"), for: "minimalValidOverlay2.yaml")!
+      var driver = try Driver(args: ["swiftc", "-c", "-vfsoverlay", overlayFile1Path.pathString, "-vfsoverlay", overlayFile2Path.pathString, "-vfsoverlay", overlayFile3Path.pathString, "foo.swift"])
       let plannedJobs = try driver.planBuild().removingAutolinkExtractJobs()
       XCTAssertEqual(plannedJobs.count, 1)
       XCTAssertEqual(plannedJobs[0].kind, .compile)
-      XCTAssert(plannedJobs[0].commandLine.contains(subsequence: [.flag("-vfsoverlay"), .path(.relative(RelativePath("overlay1.yaml"))), .flag("-vfsoverlay"), .path(.relative(RelativePath("overlay2.yaml"))), .flag("-vfsoverlay"), .path(.relative(RelativePath("overlay3.yaml")))]))
+      XCTAssert(plannedJobs[0].commandLine.contains(subsequence: [.flag("-vfsoverlay"), .path(.absolute(overlayFile1Path)), .flag("-vfsoverlay"), .path(.absolute(overlayFile2Path)), .flag("-vfsoverlay"), .path(.absolute(overlayFile3Path))]))
     }
   }
 
